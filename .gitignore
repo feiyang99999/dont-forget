@@ -13,6 +13,7 @@ public/ocr
 /chi_sim.traineddata
 /eng.traineddata
 /agent-tools/
+__pycache__/
 dist-ssr
 *.local
 

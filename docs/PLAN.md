@@ -85,4 +85,4 @@ Subscription charge dates in the past roll forward on open. That is not a histor
 - [x] Chinese README and GitHub Pages workflow
 - [x] Fresh-eyes review (`docs/REVIEW.md`) and fixes
 - [x] Search-first decisions (`docs/DECISIONS.md`)
-- [ ] Build, tests, mobile-viewport walkthrough, screenshots
+- [x] Build, tests, mobile-viewport walkthrough, screenshots

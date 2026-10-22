@@ -21,7 +21,7 @@ def icon(size: int, maskable: bool) -> Image.Image:
     center = size // 2 + int(size * 0.04)
     draw.ellipse((center - radius, center - radius, center + radius, center + radius), fill=SEAL)
     font = ImageFont.truetype(FONT, int(size * 0.2))
-    text = "期"
+    text = "忘"
     box = draw.textbbox((0, 0), text, font=font)
     draw.text((center - (box[2] - box[0]) / 2, center - (box[3] - box[1]) / 2 - size * 0.02), text, fill=CREAM, font=font)
     return image

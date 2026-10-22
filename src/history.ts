@@ -9,6 +9,10 @@ export interface NextFields {
   validFrom: string | null;
   validUntil: string;
   cycle: Cycle | null;
+  dueDay: number | null;
+  dueMonth: number | null;
+  seriesUntil: string | null;
+  seriesCount: number | null;
   reminders: number[];
   notes: string;
   sourceText: string;
@@ -40,6 +44,10 @@ export function supersedeItem(item: Item, next: NextFields, at: number, revision
     validFrom: item.validFrom,
     validUntil: item.validUntil,
     cycle: item.cycle,
+    dueDay: item.dueDay ?? null,
+    dueMonth: item.dueMonth ?? null,
+    seriesUntil: item.seriesUntil ?? null,
+    seriesCount: item.seriesCount ?? null,
     reminders: [...item.reminders],
     notes: item.notes,
     sourceText: item.sourceText,

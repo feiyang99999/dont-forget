@@ -36,6 +36,7 @@ describe('monthly subscription totals', () => {
     const monthly = {
       id: 'a', kind: 'subscription', name: '云盘', category: 'subscription', personId: 'person-me',
       amount: 30, currency: 'CNY', validFrom: null, validUntil: '2026-11-01', cycle: 'monthly',
+      dueDay: null, dueMonth: null, seriesUntil: null, seriesCount: null,
       reminders: [7], notes: '', sourceText: '', thumbnail: null, createdAt: 1, updatedAt: 1, history: [],
     } satisfies Item;
     const yearly = { ...monthly, id: 'b', name: '保险会员', amount: 120, cycle: 'yearly' } satisfies Item;

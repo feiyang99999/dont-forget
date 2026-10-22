@@ -6,7 +6,7 @@ import { personName } from './people.ts';
 import { searchItems, type SearchHit } from './search.ts';
 import { timelineOf } from './history.ts';
 import type { Category, Draft, Item, Person, ViewState } from './types.ts';
-import { CATEGORIES } from './types.ts';
+import { CATEGORIES, TEMPLATES } from './templates.ts';
 
 const CURRENCIES = ['CNY', 'USD', 'HKD', 'EUR', 'GBP', 'JPY'];
 
@@ -35,6 +35,13 @@ function card(state: ViewState, hit: SearchHit): string {
   const level = urgency(item.validUntil);
   const days = daysText(state.lang, daysUntil(item.validUntil));
   const thumb = item.thumbnail ? `<img class="thumb" alt="" src="${esc(item.thumbnail)}">` : '';
+  const schedule = item.seriesCount === 0
+    ? `<p class="flag">${esc(t(state.lang, 'ended'))}</p>`
+    : item.cycle === 'monthly' && item.dueDay
+      ? `<p class="flag">${esc(fill(t(state.lang, 'monthlyOn'), { day: item.dueDay }))}</p>`
+      : item.cycle === 'yearly' && item.dueMonth && item.dueDay
+        ? `<p class="flag">${esc(fill(t(state.lang, 'yearlyOn'), { month: item.dueMonth, day: item.dueDay }))}</p>`
+        : '';
   const money = item.amount == null
     ? ''
     : `<p class="money">${esc(formatMoney(item.amount, item.currency || 'CNY', state.lang))}${item.kind === 'subscription' ? ` ${esc(item.cycle === 'yearly' ? t(state.lang, 'perYear') : t(state.lang, 'perMonth'))}` : ''}</p>`;
@@ -52,7 +59,7 @@ function card(state: ViewState, hit: SearchHit): string {
       <h3>${esc(item.name)}</h3>
       <p class="meta">${esc(personName(state.people, item.personId) || t(state.lang, 'unknownPerson'))} · ${esc(categoryLabel(state.lang, item.category))}</p>
       <p class="when"><time datetime="${esc(item.validUntil)}">${esc(item.validUntil)}</time> · ${esc(days)}</p>
-      ${money}${share}${flags}
+      ${money}${share}${schedule}${flags}
     </div></div>
     <div class="actions">
       <button type="button" data-action="open" data-id="${esc(item.id)}" aria-label="${esc(`${t(state.lang, 'edit')} ${item.name}`)}">${esc(t(state.lang, 'edit'))}</button>
@@ -102,6 +109,7 @@ function listView(state: ViewState): string {
   return `${banner(state)}
     <div class="actions stack">
       <button type="button" class="primary" data-action="capture">${esc(t(state.lang, 'addPhoto'))}</button>
+      <button type="button" data-action="templates">${esc(t(state.lang, 'addTemplate'))}</button>
       <button type="button" data-action="manual" data-kind="expiry">${esc(t(state.lang, 'addManual'))}</button>
     </div>
     <label class="search"><span class="sr">${esc(t(state.lang, 'searchPlaceholder'))}</span>
@@ -192,7 +200,24 @@ function editView(state: ViewState): string {
         <label class="check"><input type="radio" name="cycle" value="monthly"${draft.cycle === 'monthly' ? ' checked' : ''}> ${esc(t(state.lang, 'monthly'))}</label>
         <label class="check"><input type="radio" name="cycle" value="yearly"${draft.cycle === 'yearly' ? ' checked' : ''}> ${esc(t(state.lang, 'yearly'))}</label>
       </fieldset>`
-    : '';
+    : `<fieldset><legend>${esc(t(state.lang, 'fieldCycle'))}</legend>
+        <label class="check"><input type="radio" name="cycle" value="once"${draft.cycle == null ? ' checked' : ''}> ${esc(t(state.lang, 'cycleOnce'))}</label>
+        <label class="check"><input type="radio" name="cycle" value="monthly"${draft.cycle === 'monthly' ? ' checked' : ''}> ${esc(t(state.lang, 'monthly'))}</label>
+        <label class="check"><input type="radio" name="cycle" value="yearly"${draft.cycle === 'yearly' ? ' checked' : ''}> ${esc(t(state.lang, 'yearly'))}</label>
+        <p class="hint">${esc(t(state.lang, 'recurHint'))}</p>
+      </fieldset>`;
+  const months = options(Array.from({ length: 12 }, (_, index) => ({ value: String(index + 1), label: String(index + 1) })), draft.dueMonth);
+  const recurFields = draft.kind === 'subscription' || draft.cycle == null
+    ? ''
+    : `<div class="split">
+        ${draft.cycle === 'yearly' ? `<label>${esc(t(state.lang, 'fieldDueMonth'))}<select name="dueMonth"><option value=""></option>${months}</select></label>` : ''}
+        <label>${esc(t(state.lang, 'fieldDueDay'))}<input name="dueDay" inputmode="numeric" value="${esc(draft.dueDay)}"></label>
+      </div>
+      <div class="split">
+        <label>${esc(t(state.lang, 'fieldSeriesUntil'))}<input type="date" name="seriesUntil" value="${esc(draft.seriesUntil)}"></label>
+        <label>${esc(t(state.lang, 'fieldSeriesCount'))}<input name="seriesCount" inputmode="numeric" value="${esc(draft.seriesCount)}"></label>
+      </div>
+      ${draft.validUntil ? `<p class="hint">${esc(fill(t(state.lang, 'nextDue'), { date: draft.validUntil }))}</p>` : ''}`;
   const categoryField = draft.kind === 'subscription'
     ? ''
     : `<label>${esc(t(state.lang, 'fieldCategory'))}<select name="category">${categories}</select></label>`;
@@ -212,9 +237,12 @@ function editView(state: ViewState): string {
       </div>
       <div class="split">
         <label>${esc(fromLabel)}<input type="date" name="validFrom" value="${esc(draft.validFrom)}"></label>
-        <label>${esc(untilLabel)}<input type="date" name="validUntil" required value="${esc(draft.validUntil)}"></label>
+        ${draft.kind !== 'subscription' && draft.cycle
+          ? ''
+          : `<label>${esc(untilLabel)}<input type="date" name="validUntil" required value="${esc(draft.validUntil)}"></label>`}
       </div>
       ${cycle}
+      ${recurFields}
       ${reminderFields(draft, state.lang)}
       <label>${esc(t(state.lang, 'fieldNotes'))}<textarea name="notes" rows="2">${esc(draft.notes)}</textarea></label>
       <label>${esc(t(state.lang, 'fieldSource'))}<textarea name="sourceText" rows="6">${esc(draft.sourceText)}</textarea></label>
@@ -250,6 +278,10 @@ function captureView(state: ViewState): string {
       <button type="button" data-action="use-sample">${esc(t(state.lang, 'useSample'))}</button>
       <button type="button" data-action="manual" data-kind="expiry">${esc(t(state.lang, 'manualFill'))}</button>
     </div>
+    <label>${esc(t(state.lang, 'pasteLabel'))}
+      <textarea id="sms" rows="5" placeholder="${esc(t(state.lang, 'pastePlaceholder'))}"></textarea>
+    </label>
+    <button type="button" class="primary" data-action="parse-sms">${esc(t(state.lang, 'parseSms'))}</button>
     <input id="camera" type="file" accept="image/*" capture="environment" hidden>
     <input id="album" type="file" accept="image/*" hidden>`;
 }
@@ -281,7 +313,23 @@ function settingsView(state: ViewState): string {
     <button type="button" class="danger wide" data-action="clear">${esc(state.confirmClear ? t(state.lang, 'confirmClear') : t(state.lang, 'clearData'))}</button>`;
 }
 
+function templatesView(state: ViewState): string {
+  const groups = CATEGORIES.map((category) => {
+    const items = TEMPLATES.filter((template) => template.category === category);
+    const buttons = items.map((template) => {
+      const name = state.lang === 'en' ? template.nameEn : template.nameZh;
+      return `<button type="button" data-action="template" data-id="${esc(template.id)}">${esc(name)}</button>`;
+    }).join('');
+    return `<section><h2>${esc(categoryLabel(state.lang, category))}</h2><div class="actions stack">${buttons}</div></section>`;
+  }).join('');
+  return `<button type="button" class="back" data-action="back">${esc(t(state.lang, 'back'))}</button>
+    <h2>${esc(t(state.lang, 'templatesTitle'))}</h2>
+    <p class="hint">${esc(t(state.lang, 'templatesHint'))}</p>
+    ${groups}`;
+}
+
 function main(state: ViewState): string {
+  if (state.view === 'templates') return templatesView(state);
   if (state.view === 'capture') return captureView(state);
   if (state.view === 'edit') return editView(state);
   if (state.view === 'subs') return subsView(state);

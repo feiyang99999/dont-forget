@@ -38,4 +38,50 @@ describe('ics reminders', () => {
     expect(ics).toContain('TRIGGER:PT0S');
     expect(ics).not.toContain('not-a-date');
   });
+
+  it('writes one monthly RRULE that lands on the last day of a short month', () => {
+    const ics = buildIcs([
+      {
+        uid: 'loan@expiry-butler.local',
+        title: '还款: 我 房贷',
+        description: '房贷',
+        date: '2026-03-31',
+        alarms: [3, 1],
+        recur: { freq: 'MONTHLY', monthDay: 31, month: null, until: '2028-12-31', count: 6 },
+      },
+    ], new Date('2026-10-22T03:04:05Z'), '别忘了');
+    const unfolded = ics.replace(/\r\n /g, '');
+    expect(unfolded).toContain('PRODID:-//BieWangLe//CN');
+    expect(unfolded).toContain('X-WR-CALNAME:别忘了');
+    expect(unfolded).toContain('RRULE:FREQ=MONTHLY;BYMONTHDAY=28,29,30,31;BYSETPOS=-1;UNTIL=20281231T090000;COUNT=6');
+    expect(ics).toContain('TRIGGER:-P3D');
+    expect(ics).toContain('TRIGGER:-P1D');
+    expect(ics).not.toContain('UNTIL=20281231T090000Z');
+  });
+
+  it('writes a plain monthly day and a yearly tax date', () => {
+    const ics = buildIcs([
+      {
+        uid: 'card@expiry-butler.local',
+        title: '还款: 我 信用卡',
+        description: '信用卡',
+        date: '2026-11-15',
+        alarms: [3, 1],
+        recur: { freq: 'MONTHLY', monthDay: 15, month: null, until: null, count: null },
+      },
+      {
+        uid: 'tax@expiry-butler.local',
+        title: '到期: 我 个税',
+        description: '个税',
+        date: '2027-06-30',
+        alarms: [30, 14],
+        recur: { freq: 'YEARLY', monthDay: 30, month: 6, until: null, count: null },
+      },
+    ], new Date('2026-10-22T00:00:00Z'), "Don't Forget");
+    const unfolded = ics.replace(/\r\n /g, '');
+    expect(unfolded).toContain('RRULE:FREQ=MONTHLY;BYMONTHDAY=15');
+    expect(unfolded).not.toContain('BYMONTHDAY=15;BYSETPOS');
+    expect(unfolded).toContain('RRULE:FREQ=YEARLY;BYMONTH=6;BYMONTHDAY=30');
+    expect(unfolded).toContain("X-WR-CALNAME:Don't Forget");
+  });
 });

@@ -1,88 +1,78 @@
-# Expiry Butler v1 plan
+# 别忘了 plan
 
-Personal, privacy-first expiry and renewal PWA for one person on iPhone Safari (Home Screen). No account, no backend, no paid service. Static build, relative asset paths, so it can sit on GitHub Pages under a subpath.
+Personal, privacy-first reminder PWA for one person on iPhone Safari (Home Screen). No account, no backend, no paid service. Static build, relative asset paths. Data stays on the device. After load, the only network is same-origin assets.
 
-Process for this work follows the ECC loop: plan → test → implement → review → verify → remember.
+Process: plan → search-first → test → implement → review → verify → remember.
 
-## Scope
+v1 (到期管家) shipped OCR, rule extraction, people → category → item, literal search, renewal timeline, subscriptions, `.ics` alarms, and JSON backup. v2 renames the app and adds monthly/yearly bills, pasted SMS, and household templates. IndexedDB stays `expiry-butler` so the phone keeps its records. Old backup files still import.
+
+## v2 scope
 
 In:
 
-- On-device OCR (Tesseract.js, English + Simplified Chinese) with worker, core, and language data copied out of npm packages at build time. No third-party CDN at runtime.
-- Rule-based extraction (no LLM): title, category, amount, currency, valid-from, valid-until. Editable confirm form.
-- Downscaled JPEG thumbnail plus the full raw OCR text stored with every item.
-- Re-run extraction on the stored raw text.
-- People (wings) → category (rooms) → item (drawer). Default people: 我 / 伴侣 / 孩子 / 父母, editable.
-- Literal search over name, notes, raw text, and superseded revisions, narrowed by person and category.
-- Renewal keeps the previous version on a timeline instead of overwriting it. Direct edits fix typos and do not create history.
-- Subscriptions: price, currency, monthly/yearly, next charge date, monthly total (yearly ÷ 12), same reminders.
-- Default reminders 30 / 7 / 1 days before, editable. Export one or all as `.ics` with `VALARM`.
-- In-app “due soon” banner. No Web Push (iOS cannot schedule local notifications without a push server).
-- IndexedDB. JSON backup export/import, including raw text, history, and thumbnails.
-- Chinese / English UI, Chinese default. Offline shell via service worker + manifest + icons. Safe-area layout.
-- Unit tests for extraction, date math, ICS, and IndexedDB/backup round-trip.
+- User-facing Chinese name 别忘了. English locale name “Don't Forget”. Manifest, Apple home-screen title, headings, calendar product id, and download names follow that. Backup downloads are `bie-wang-le-backup.json`. Calendar downloads are `bie-wang-le.ics`.
+- Monthly bills on a fixed day (房贷, 信用卡还款): name, day of month, optional amount, reminder lead days defaulting to 3 and 1, optional end date and/or remaining count. The list shows the next due date. Days 29–31 fall on the last day of a short month.
+- One recurring `VEVENT` per bill: `RRULE:FREQ=MONTHLY` with `BYMONTHDAY`, and `BYSETPOS=-1` when the day would not exist in a short month, plus `UNTIL` and/or `COUNT` when set, and the same `VALARM`s. Yearly recurrence uses `FREQ=YEARLY` for 年检 and 个税年度汇算. Export once.
+- Paste SMS or other text. Local rules read 本期应还 / 应还金额, 最后还款日 / 还款日, 尾号, and the bank name, then open the same confirm form as OCR. The pasted text is stored like OCR text. Card numbers longer than a tail are stored as last-4 only.
+- Nine categories with quick-add templates. Old category ids map onto these for records already on the phone and for old backups.
+- Person → category → item stays.
 
 Out:
 
-- Accounts, servers, analytics, LLM extraction, vector search, MemPalace halls/tunnels/knowledge-graph.
-- Web Push.
-- Keeping the original full-resolution photo (only a thumbnail plus the verbatim text).
+- Bank connections, payments, balances, or any request to a bank.
+- Web Push, accounts, analytics, LLM extraction.
+- A sixth-month recurrence. Templates that are “about every half year” stay one-shot dates the person renews.
 
-## Architecture
+## Categories
 
-Vite + TypeScript, no UI framework. `vite build` emits a static `dist/`.
+| id | 中文 | English | Was |
+| --- | --- | --- | --- |
+| document | 证件 | IDs | `id` |
+| car | 车 | Car | |
+| house | 房 | Home | `contract` |
+| money | 钱 | Money | `bill` |
+| insurance | 保险 | Insurance | `insurance` |
+| health | 健康 | Health | |
+| subscription | 订阅 | Subscriptions | `subscription` |
+| household | 家里 | Household | `other` |
+| child | 孩子 | Kids | |
 
-- `src/extract.ts` — pure rules
-- `src/dates.ts` — today, urgency, next billing date, reminder normalization
-- `src/ics.ts` — calendar text
-- `src/history.ts` — supersede + timeline
-- `src/search.ts` — scoped literal scan
-- `src/backup.ts` — JSON backup
-- `src/db.ts` — IndexedDB via `idb` (`items`, `people`, `meta`)
-- `src/ocr.ts` — Tesseract, same-origin paths only
-- `src/app.ts` / `src/render.ts` — UI
-- `public/ocr/` — generated at prebuild, gitignored
-- Service worker precaches the app shell and caches `/ocr/` at runtime (CacheFirst). It does not call a network API.
-
-`base` is `./` for production so GitHub Pages project sites work. Override with `BASE_PATH` if a host needs an absolute prefix.
+Templates live in `src/templates.ts`. Each one sets name, category, one-shot or monthly/yearly, day/month when recurring, and reminder defaults. 房贷 and 信用卡还款 are monthly with reminders 3 and 1. 年检 is yearly. 个税年度汇算 is yearly on 30 June, inside the March–June window.
 
 ## Data model
 
 ```text
-Person { id, name, createdAt }          // wing
-Item   {                                // current drawer
-  id, kind: expiry | subscription,
-  name, category, personId,
-  amount, currency,
-  validFrom, validUntil,                // temporal window; validUntil is expiry or next charge
-  cycle, reminders, notes,
-  sourceText,                           // verbatim OCR or pasted text, never dropped on save
-  thumbnail,                            // small data-URL JPEG or null
-  createdAt, updatedAt,
-  history: Revision[]                   // superseded drawers, newest first
+Item {
+  ...v1 fields,
+  dueDay: number | null,          // 1–31
+  dueMonth: number | null,        // 1–12, yearly only
+  seriesUntil: string | null,     // last date that may occur
+  seriesCount: number | null      // remaining occurrences, including the next one
 }
-Revision { same factual fields, recordedAt, supersededAt }
 ```
 
-Backup file:
+`cycle` null means one date in `validUntil`. `monthly` / `yearly` on an expiry item means the next due date is derived from `dueDay` / `dueMonth` and rolled forward on open. That roll is not history. Subscriptions keep their own next-charge roll and the monthly total.
+
+Backup:
 
 ```json
-{ "app": "expiry-butler", "version": 1, "exportedAt": "", "people": [], "items": [] }
+{ "app": "bie-wang-le", "version": 2, "exportedAt": "", "people": [], "items": [] }
 ```
 
-Ambiguous numeric dates (`01/02/2026`, both parts ≤ 12) are day/month/year. `10/22/2026` is month/day because 22 cannot be a month.
+`parseBackup` also accepts `app: "expiry-butler"` version 1. Unknown categories become `household`.
 
-Subscription charge dates in the past roll forward on open. That is not a history event. History is written only by the explicit renew action.
+Calendar `UID` stays `{id}@expiry-butler.local` so a new export still targets the event the phone already imported. `PRODID` becomes `-//BieWangLe//CN`. `X-WR-CALNAME` is 别忘了 or Don't Forget, matching the language used for the export.
+
+## Search first (v2)
+
+- Recurrence text: `rrule` 2.8.1 (BSD-3-Clause) depends on `tslib` and expands dates in memory. This app only needs one `RRULE` line plus the short-month clamp, which `BYMONTHDAY` alone skips. Extend `src/ics.ts` and `src/dates.ts`. Do not add the package.
+- SMS: `transaction-sms-parser` 3.3.3 (MIT) reads INR debit/credit alerts (`INR 2000 debited…`), not 本期应还 / 最后还款日. Build `src/sms.ts`.
 
 ## Checklist
 
-- [x] Choose stack and data model
-- [x] Draft extraction, dates, ICS, history, search, backup modules
-- [x] Unit tests for extraction, date math, ICS, IndexedDB + backup round-trip
-- [x] IndexedDB module (`idb`, same exported API)
-- [x] Mobile UI: capture/OCR, confirm, list, subscriptions, settings, timeline
-- [x] Self-host OCR assets, sample policy image, icons, manifest, service worker
-- [x] Chinese README and GitHub Pages workflow
-- [x] Fresh-eyes review (`docs/REVIEW.md`) and fixes
-- [x] Search-first decisions (`docs/DECISIONS.md`)
-- [x] Build, tests, mobile-viewport walkthrough, screenshots
+- [x] v1
+- [x] Plan v2 (this file)
+- [x] Tests for short months, RRULE, SMS samples, old backup import, category map
+- [x] Rename, recurring bills, paste box, template picker
+- [x] Review notes and decision log
+- [x] `npm test`, production build, iPhone-size screenshots

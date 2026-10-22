@@ -1,6 +1,7 @@
 import { deleteDB, openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import type { Item, Person } from './types.ts';
+import type { Item, Person, Revision } from './types.ts';
 import { defaultPeople } from './people.ts';
+import { mapLegacyCategory } from './templates.ts';
 
 const DB_NAME = 'expiry-butler';
 const DB_VERSION = 1;
@@ -54,6 +55,29 @@ export async function deleteDatabase(): Promise<void> {
   await deleteDB(DB_NAME);
 }
 
+function normalizeRevision(revision: Revision): Revision {
+  return {
+    ...revision,
+    category: mapLegacyCategory(String(revision.category)),
+    dueDay: revision.dueDay ?? null,
+    dueMonth: revision.dueMonth ?? null,
+    seriesUntil: revision.seriesUntil ?? null,
+    seriesCount: revision.seriesCount ?? null,
+  };
+}
+
+function normalizeItem(item: Item): Item {
+  return {
+    ...item,
+    category: item.kind === 'subscription' ? 'subscription' : mapLegacyCategory(String(item.category)),
+    dueDay: item.dueDay ?? null,
+    dueMonth: item.dueMonth ?? null,
+    seriesUntil: item.seriesUntil ?? null,
+    seriesCount: item.seriesCount ?? null,
+    history: (item.history ?? []).map(normalizeRevision),
+  };
+}
+
 function orderPeople(people: Person[], order: string): Person[] {
   const rank = new Map(order.split(',').filter(Boolean).map((id, index) => [id, index]));
   return [...people].sort((a, b) => {
@@ -74,7 +98,7 @@ export async function loadAll(): Promise<{ people: Person[]; items: Item[] }> {
   const orderRequest = tx.objectStore('meta').get('peopleOrder');
   const [people, items, orderRow] = await Promise.all([peopleRequest, itemsRequest, orderRequest]);
   await tx.done;
-  if (people.length > 0) return { people: orderPeople(people, orderRow?.value ?? ''), items };
+  if (people.length > 0) return { people: orderPeople(people, orderRow?.value ?? ''), items: items.map(normalizeItem) };
   const seeded = defaultPeople();
   await savePeople(seeded);
   return { people: seeded, items };

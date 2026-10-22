@@ -33,7 +33,7 @@ describe('extractDocument', () => {
       validUntil: '2026-12-31',
     });
     expect(extractDocument('水电费账单\n金额合计：２５６．８０元\n截止日期：２０２６年１１月０５日')).toMatchObject({
-      category: 'bill',
+      category: 'money',
       amount: 256.8,
       currency: 'CNY',
       validUntil: '2026-11-05',
@@ -45,7 +45,7 @@ describe('extractDocument', () => {
 姓名 Name: LI NA
 Date of birth: 02 Jan 1990
 Date of expiry: 22 Oct 2030`);
-    expect(result.category).toBe('id');
+    expect(result.category).toBe('document');
     expect(result.validUntil).toBe('2030-10-22');
     expect(result.validFrom).toBeNull();
     expect(result.amount).toBeNull();
@@ -56,7 +56,7 @@ Date of expiry: 22 Oct 2030`);
 月租金 RMB 3,500
 签发日期: 2024-03-01
 到期日: 2027-03-01`);
-    expect(result.category).toBe('contract');
+    expect(result.category).toBe('house');
     expect(result.amount).toBe(3500);
     expect(result.currency).toBe('CNY');
     expect(result.validFrom).toBe('2024-03-01');
@@ -77,7 +77,7 @@ Expiry: 22/10/2026`);
     const result = extractDocument(`Invoice
 Amount due: $15.99
 Due date: 10/22/2026`);
-    expect(result.category).toBe('bill');
+    expect(result.category).toBe('money');
     expect(result.amount).toBe(15.99);
     expect(result.currency).toBe('USD');
     expect(result.validUntil).toBe('2026-10-22');
@@ -87,7 +87,7 @@ Due date: 10/22/2026`);
     const result = extractDocument(`账单
 缴费日期 01/02/2027`);
     expect(result.validUntil).toBe('2027-02-01');
-    expect(result.category).toBe('bill');
+    expect(result.category).toBe('money');
   });
 
   it('reads English month names and membership fees', () => {
@@ -110,7 +110,7 @@ Valid until Oct 22, 2026`);
 
   it('reads a glued Chinese validity phrase', () => {
     expect(extractDocument('身份证\n有效期至2028年6月1日')).toMatchObject({
-      category: 'id',
+      category: 'document',
       validUntil: '2028-06-01',
     });
   });
@@ -121,7 +121,7 @@ Valid until Oct 22, 2026`);
 
   it('returns no date when the only date is a birthday', () => {
     const result = extractDocument('护照\n出生日期：1990年1月2日');
-    expect(result.category).toBe('id');
+    expect(result.category).toBe('document');
     expect(result.validUntil).toBeNull();
     expect(result.validFrom).toBeNull();
   });
@@ -171,7 +171,7 @@ Payment due: 31 Dec 2026`);
 
   it('splits a 自/至 range into from and until', () => {
     const result = extractDocument('服务协议\n服务期限自2024年1月1日至2026年10月22日');
-    expect(result.category).toBe('contract');
+    expect(result.category).toBe('house');
     expect(result.validFrom).toBe('2024-01-01');
     expect(result.validUntil).toBe('2026-10-22');
   });
@@ -179,7 +179,7 @@ Payment due: 31 Dec 2026`);
   it('reads 22 Oct 2026 and an empty note', () => {
     expect(extractDocument('passport\nexpiry 22 Oct 2026').validUntil).toBe('2026-10-22');
     expect(extractDocument('hello world')).toMatchObject({
-      category: 'other',
+      category: 'household',
       amount: null,
       validUntil: null,
       title: 'hello world',

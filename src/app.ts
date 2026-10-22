@@ -1,19 +1,20 @@
 import { asset } from './assets.ts';
 import { parseBackup, serializeBackup } from './backup.ts';
-import { nextOccurrence, normalizeReminders, parseAmount, todayIso } from './dates.ts';
+import { advanceSeries, nextMonthly, nextOccurrence, nextYearly, normalizeReminders, parseAmount, todayIso } from './dates.ts';
 import { clearAll, deleteItem, getMeta, loadAll, replaceAll, saveItem, savePeople, setMeta } from './db.ts';
 import { downloadText } from './download.ts';
 import { extractDocument } from './extract.ts';
 import { supersedeItem, type NextFields } from './history.ts';
 import { categoryLabel, fill, ocrPhase, t } from './i18n.ts';
-import { buildIcs, type IcsEvent } from './ics.ts';
+import { buildIcs, type IcsEvent, type IcsRecur } from './ics.ts';
 import { canvasThumb, fileToCanvas } from './image.ts';
 import { formatMoney } from './money.ts';
 import { recognize } from './ocr.ts';
+import { parseSms } from './sms.ts';
 import { personName } from './people.ts';
 import { renderApp } from './render.ts';
+import { CATEGORIES, templateById } from './templates.ts';
 import type { Category, Draft, Item, ItemKind, Lang, ViewState } from './types.ts';
-import { CATEGORIES } from './types.ts';
 
 const state: ViewState = {
   lang: 'zh',
@@ -43,7 +44,7 @@ function storedLang(): Lang {
 function applyLang(lang: Lang): void {
   state.lang = lang;
   document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
-  document.title = lang === 'zh' ? '到期管家' : 'Expiry Butler';
+  document.title = lang === 'zh' ? '别忘了' : "Don't Forget";
   localStorage.setItem('expiry-butler-lang', lang);
 }
 
@@ -85,13 +86,17 @@ function blankDraft(kind: ItemKind): Draft {
     kind,
     mode: 'create',
     name: '',
-    category: kind === 'subscription' ? 'subscription' : 'other',
+    category: kind === 'subscription' ? 'subscription' : 'household',
     personId,
     amount: '',
     currency: 'CNY',
     validFrom: '',
     validUntil: '',
-    cycle: 'monthly',
+    cycle: kind === 'subscription' ? 'monthly' : null,
+    dueDay: '',
+    dueMonth: '',
+    seriesUntil: '',
+    seriesCount: '',
     reminders: [30, 7, 1],
     notes: '',
     sourceText: '',
@@ -112,7 +117,11 @@ function draftFrom(item: Item, mode: Draft['mode']): Draft {
     currency: item.currency ?? 'CNY',
     validFrom: item.validFrom ?? '',
     validUntil: item.validUntil,
-    cycle: item.cycle ?? 'monthly',
+    cycle: item.cycle,
+    dueDay: item.dueDay == null ? '' : String(item.dueDay),
+    dueMonth: item.dueMonth == null ? '' : String(item.dueMonth),
+    seriesUntil: item.seriesUntil ?? '',
+    seriesCount: item.seriesCount == null ? '' : String(item.seriesCount),
     reminders: [...item.reminders],
     notes: item.notes,
     sourceText: item.sourceText,
@@ -133,12 +142,21 @@ function scrapeForm(): void {
   draft.amount = String(data.get('amount') ?? '');
   draft.currency = String(data.get('currency') ?? 'CNY');
   draft.validFrom = String(data.get('validFrom') ?? '');
-  draft.validUntil = String(data.get('validUntil') ?? '');
+  if (data.has('validUntil')) draft.validUntil = String(data.get('validUntil') ?? '');
+  if (data.has('dueDay')) draft.dueDay = String(data.get('dueDay') ?? '');
+  if (data.has('dueMonth')) draft.dueMonth = String(data.get('dueMonth') ?? '');
+  if (data.has('seriesUntil')) draft.seriesUntil = String(data.get('seriesUntil') ?? '');
+  if (data.has('seriesCount')) draft.seriesCount = String(data.get('seriesCount') ?? '');
   draft.notes = String(data.get('notes') ?? '');
   draft.sourceText = String(data.get('sourceText') ?? '');
+  const cycle = String(data.get('cycle') ?? '');
   if (draft.kind === 'subscription') {
-    draft.cycle = String(data.get('cycle') ?? 'monthly') === 'yearly' ? 'yearly' : 'monthly';
+    draft.cycle = cycle === 'yearly' ? 'yearly' : 'monthly';
     draft.category = 'subscription';
+  } else if (cycle === 'monthly' || cycle === 'yearly') {
+    draft.cycle = cycle;
+  } else if (cycle === 'once') {
+    draft.cycle = null;
   }
   draft.reminders = normalizeReminders(data.getAll('reminder').map((value) => Number(value)));
 }
@@ -154,7 +172,7 @@ function scrapePeople(): void {
 function applyGuesses(draft: Draft): void {
   const extracted = extractDocument(draft.sourceText);
   if (extracted.title) draft.name = extracted.title;
-  if (draft.kind !== 'subscription' && extracted.category !== 'other') draft.category = extracted.category;
+  if (draft.kind !== 'subscription' && extracted.category !== 'household') draft.category = extracted.category;
   if (extracted.amount != null) draft.amount = String(extracted.amount);
   if (extracted.currency) draft.currency = extracted.currency;
   if (extracted.validFrom) draft.validFrom = extracted.validFrom;
@@ -209,8 +227,16 @@ async function runOcr(blob: Blob): Promise<void> {
   }
 }
 
+function wholeNumber(raw: string, min: number, max: number): number | null {
+  if (!raw.trim()) return null;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < min || value > max) return null;
+  return value;
+}
+
 function fieldsFromDraft(draft: Draft): NextFields {
   const amount = parseAmount(draft.amount);
+  const recurring = draft.kind !== 'subscription' && (draft.cycle === 'monthly' || draft.cycle === 'yearly');
   return {
     name: draft.name.trim(),
     category: draft.kind === 'subscription' ? 'subscription' : draft.category,
@@ -219,7 +245,11 @@ function fieldsFromDraft(draft: Draft): NextFields {
     currency: amount == null ? null : draft.currency,
     validFrom: draft.validFrom || null,
     validUntil: draft.validUntil,
-    cycle: draft.kind === 'subscription' ? draft.cycle : null,
+    cycle: draft.kind === 'subscription' ? draft.cycle : recurring ? draft.cycle : null,
+    dueDay: recurring ? wholeNumber(draft.dueDay, 1, 31) : null,
+    dueMonth: recurring && draft.cycle === 'yearly' ? wholeNumber(draft.dueMonth, 1, 12) : null,
+    seriesUntil: recurring && /^\d{4}-\d{2}-\d{2}$/.test(draft.seriesUntil) ? draft.seriesUntil : null,
+    seriesCount: recurring ? wholeNumber(draft.seriesCount, 0, 600) : null,
     reminders: normalizeReminders(draft.reminders),
     notes: draft.notes.trim(),
     sourceText: draft.sourceText,
@@ -235,6 +265,32 @@ async function saveDraft(): Promise<void> {
     draft.error = t(state.lang, 'needName');
     render();
     return;
+  }
+  if (draft.kind !== 'subscription' && (draft.cycle === 'monthly' || draft.cycle === 'yearly')) {
+    const day = wholeNumber(draft.dueDay, 1, 31);
+    const month = wholeNumber(draft.dueMonth, 1, 12);
+    if (day == null) {
+      draft.error = t(state.lang, 'badDay');
+      render();
+      return;
+    }
+    if (draft.cycle === 'yearly' && month == null) {
+      draft.error = t(state.lang, 'badMonth');
+      render();
+      return;
+    }
+    if (draft.seriesCount.trim() && wholeNumber(draft.seriesCount, 0, 600) == null) {
+      draft.error = t(state.lang, 'badCount');
+      render();
+      return;
+    }
+    const today = todayIso();
+    draft.validUntil = draft.cycle === 'monthly' ? nextMonthly(day, today) : nextYearly(month ?? 1, day, today);
+    if (draft.seriesUntil && draft.validUntil > draft.seriesUntil) {
+      draft.error = t(state.lang, 'seriesPast');
+      render();
+      return;
+    }
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.validUntil)) {
     draft.error = t(state.lang, 'needDate');
@@ -295,22 +351,63 @@ function describe(item: Item): string {
   return lines.filter(Boolean).join('\n');
 }
 
+function recurOf(item: Item): IcsRecur | null {
+  if (!item.cycle || item.seriesCount === 0) return null;
+  const day = item.dueDay ?? Number(item.validUntil.slice(8, 10));
+  const month = item.cycle === 'yearly' ? (item.dueMonth ?? Number(item.validUntil.slice(5, 7))) : null;
+  if (!Number.isInteger(day) || day < 1) return null;
+  return {
+    freq: item.cycle === 'yearly' ? 'YEARLY' : 'MONTHLY',
+    monthDay: day,
+    month,
+    until: item.seriesUntil,
+    count: item.seriesCount,
+  };
+}
+
 function toEvent(item: Item): IcsEvent {
   const who = personName(state.people, item.personId);
-  const prefix = item.kind === 'subscription' ? t(state.lang, 'chargeWord') : t(state.lang, 'expiryWord');
+  const prefix = item.cycle === 'monthly' && item.kind !== 'subscription'
+    ? t(state.lang, 'payWord')
+    : item.kind === 'subscription'
+      ? t(state.lang, 'chargeWord')
+      : t(state.lang, 'expiryWord');
   return {
     uid: `${item.id}@expiry-butler.local`,
     title: `${prefix}: ${who} ${item.name}`.replace(/\s+/g, ' ').trim(),
     description: describe(item),
     date: item.validUntil,
     alarms: item.reminders,
+    recur: recurOf(item),
   };
 }
 
 function exportIcs(items: Item[]): void {
   if (!items.length) return;
-  downloadText('expiry-butler.ics', buildIcs(items.map(toEvent)), 'text/calendar;charset=utf-8');
+  const calendarName = state.lang === 'zh' ? '别忘了' : "Don't Forget";
+  downloadText('bie-wang-le.ics', buildIcs(items.map(toEvent), new Date(), calendarName), 'text/calendar;charset=utf-8');
   showToast(t(state.lang, 'exportedIcs'));
+}
+
+async function rollRecurring(): Promise<void> {
+  const today = todayIso();
+  for (const item of state.items) {
+    if (item.kind === 'expiry' && item.cycle && item.dueDay) {
+      const next = advanceSeries({
+        cycle: item.cycle,
+        dueDay: item.dueDay,
+        dueMonth: item.dueMonth,
+        validUntil: item.validUntil,
+        seriesUntil: item.seriesUntil,
+        seriesCount: item.seriesCount,
+      }, today);
+      if (next.validUntil === item.validUntil && next.seriesCount === item.seriesCount) continue;
+      item.validUntil = next.validUntil;
+      item.seriesCount = next.seriesCount;
+      item.updatedAt = Date.now();
+      await saveItem(item);
+    }
+  }
 }
 
 async function rollSubscriptions(): Promise<void> {
@@ -388,6 +485,57 @@ async function onClick(event: MouseEvent): Promise<void> {
       return;
     }
     await runOcr(await response.blob());
+    return;
+  }
+  if (action === 'templates') {
+    state.view = 'templates';
+    render();
+    return;
+  }
+  if (action === 'template') {
+    const template = templateById(target.dataset.id ?? '');
+    if (!template) return;
+    const draft = blankDraft(template.kind);
+    draft.name = state.lang === 'en' ? template.nameEn : template.nameZh;
+    draft.category = template.category;
+    draft.cycle = template.cycle;
+    draft.dueDay = template.dueDay == null ? '' : String(template.dueDay);
+    draft.dueMonth = template.dueMonth == null ? '' : String(template.dueMonth);
+    draft.reminders = [...template.reminders];
+    if (template.person) {
+      const id = template.person === 'child' ? 'person-child' : 'person-parents';
+      if (state.people.some((person) => person.id === id)) draft.personId = id;
+    }
+    if (template.cycle === 'monthly' && template.dueDay) draft.validUntil = nextMonthly(template.dueDay, todayIso());
+    if (template.cycle === 'yearly' && template.dueMonth && template.dueDay) {
+      draft.validUntil = nextYearly(template.dueMonth, template.dueDay, todayIso());
+    }
+    state.draft = draft;
+    state.view = 'edit';
+    render();
+    return;
+  }
+  if (action === 'parse-sms') {
+    const text = document.querySelector<HTMLTextAreaElement>('#sms')?.value ?? '';
+    if (!text.trim()) {
+      showToast(t(state.lang, 'smsEmpty'));
+      return;
+    }
+    const parsed = parseSms(text, todayIso());
+    const draft = blankDraft('expiry');
+    draft.name = parsed.title;
+    draft.category = parsed.category;
+    draft.amount = parsed.amount == null ? '' : String(parsed.amount);
+    draft.currency = parsed.currency ?? 'CNY';
+    draft.validUntil = parsed.validUntil ?? '';
+    draft.cycle = parsed.cycle;
+    draft.dueDay = parsed.dueDay == null ? '' : String(parsed.dueDay);
+    draft.sourceText = parsed.sourceText;
+    draft.reminders = parsed.cycle === 'monthly' ? [3, 1] : [30, 7, 1];
+    draft.error = parsed.validUntil ? '' : t(state.lang, 'extractNone');
+    state.draft = draft;
+    state.view = 'edit';
+    render();
     return;
   }
   if (action === 'manual') {
@@ -495,7 +643,7 @@ async function onClick(event: MouseEvent): Promise<void> {
     return;
   }
   if (action === 'export-json') {
-    downloadText('expiry-butler-backup.json', serializeBackup(state.people, state.items), 'application/json');
+    downloadText('bie-wang-le-backup.json', serializeBackup(state.people, state.items), 'application/json');
     showToast(t(state.lang, 'exportedJson'));
     return;
   }
@@ -526,6 +674,11 @@ async function onClick(event: MouseEvent): Promise<void> {
 
 async function onChange(event: Event): Promise<void> {
   const target = event.target;
+  if (target instanceof HTMLInputElement && target.name === 'cycle') {
+    scrapeForm();
+    render();
+    return;
+  }
   if (!(target instanceof HTMLInputElement) || !target.files?.[0]) return;
   const file = target.files[0];
   target.value = '';
@@ -551,6 +704,7 @@ async function onChange(event: Event): Promise<void> {
         state.people = people;
         state.items = [...items.values()];
       }
+      await rollRecurring();
       await rollSubscriptions();
       showToast(fill(t(state.lang, 'imported'), { n: parsed.items.length }));
       render();
@@ -594,6 +748,7 @@ async function boot(): Promise<void> {
     state.items = loaded.items;
     const lang = await getMeta('lang');
     if (lang === 'zh' || lang === 'en') applyLang(lang);
+    await rollRecurring();
     await rollSubscriptions();
   } catch {
     state.dbError = t(state.lang, 'dbError');

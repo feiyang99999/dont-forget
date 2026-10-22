@@ -1,12 +1,10 @@
 export type Lang = 'zh' | 'en';
 
-export type Category = 'insurance' | 'subscription' | 'id' | 'contract' | 'bill' | 'other';
+export type Category = 'document' | 'car' | 'house' | 'money' | 'insurance' | 'health' | 'subscription' | 'household' | 'child';
 
 export type Cycle = 'monthly' | 'yearly';
 
 export type ItemKind = 'expiry' | 'subscription';
-
-export const CATEGORIES: Category[] = ['insurance', 'subscription', 'id', 'contract', 'bill', 'other'];
 
 export interface Revision {
   id: string;
@@ -18,6 +16,10 @@ export interface Revision {
   validFrom: string | null;
   validUntil: string;
   cycle: Cycle | null;
+  dueDay: number | null;
+  dueMonth: number | null;
+  seriesUntil: string | null;
+  seriesCount: number | null;
   reminders: number[];
   notes: string;
   sourceText: string;
@@ -38,6 +40,10 @@ export interface Item {
   validFrom: string | null;
   validUntil: string;
   cycle: Cycle | null;
+  dueDay: number | null;
+  dueMonth: number | null;
+  seriesUntil: string | null;
+  seriesCount: number | null;
   reminders: number[];
   notes: string;
   sourceText: string;
@@ -74,7 +80,11 @@ export interface Draft {
   currency: string;
   validFrom: string;
   validUntil: string;
-  cycle: Cycle;
+  cycle: Cycle | null;
+  dueDay: string;
+  dueMonth: string;
+  seriesUntil: string;
+  seriesCount: string;
   reminders: number[];
   notes: string;
   sourceText: string;
@@ -84,7 +94,7 @@ export interface Draft {
 
 export interface ViewState {
   lang: Lang;
-  view: 'list' | 'subs' | 'settings' | 'edit' | 'capture';
+  view: 'list' | 'subs' | 'settings' | 'edit' | 'capture' | 'templates';
   loaded: boolean;
   dbError: string;
   items: Item[];

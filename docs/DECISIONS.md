@@ -26,6 +26,20 @@ The ECC search-first pass happened after a first draft of the small utilities al
 | Full-text search | Build `src/search.ts` | `minisearch` 7.2.0 (MIT) is small and has no dependencies, but it tokenizes on whitespace. Chinese OCR text often has no spaces, and the UI needs a flag when the hit is only in a superseded revision. Fuse and FlexSearch are larger than this list. | A lowercase `includes` scan over the stored strings is enough for one person’s documents. |
 | Service worker | Adopt `vite-plugin-pwa` 2.0.0 (MIT) | Workbox via the Vite plugin. A hand-written worker would have to reimplement precache, navigation fallback, and updates. | `injectRegister: false`. Registration runs only in the production build. `/ocr/` is excluded from precache (the shell stays ~200KB) and cached CacheFirst on first use. |
 
+## v2 search first
+
+| Utility | Decision | What was considered | Why |
+| --- | --- | --- | --- |
+| Monthly / yearly `RRULE` | Extend `src/ics.ts` and `src/dates.ts` | `rrule` 2.8.1 (BSD-3-Clause) depends on `tslib` and expands occurrences in memory. Plain `BYMONTHDAY=31` skips months that lack that day. | The file needs one rule line. Days 29–31 are written with `BYSETPOS=-1` so a short month uses its last day. The list computes the same date locally. |
+| Bank SMS | Build `src/sms.ts` | `transaction-sms-parser` 3.3.3 (MIT) parses INR debit alerts such as “INR 2000 debited from A/c…”. It does not read 本期应还, 最后还款日, or 尾号. | The samples are Chinese bill and loan reminders. Card numbers are reduced to the last four digits in the stored text. |
+
+## v2 product
+
+- The Chinese name is 别忘了. “Don't Forget” is the English locale only. The home-screen name comes from the manifest, which stays Chinese.
+- Old backups import. New backups use `bie-wang-le` version 2 and the file name `bie-wang-le-backup.json`.
+- Monthly bills and yearly dates (年检, 个税年度汇算) live on the main list. Subscriptions stay a separate total. Nothing connects to a bank.
+- Categories are 证件, 车, 房, 钱, 保险, 健康, 订阅, 家里, 孩子. v1 `id` / `bill` / `contract` / `other` map to 证件 / 钱 / 房 / 家里.
+
 ## Lessons
 
 - Tesseract inserts spaces between Chinese characters. `normalizeText` joins spaces and tabs between CJK characters and leaves newlines alone. The sample image is black text on white; white text on the pine background was misread.

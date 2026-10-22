@@ -13,9 +13,9 @@ export default defineConfig(({ command }) => {
         includeAssets: ['favicon.svg', 'icons/*.png', 'sample-policy.png'],
         manifest: {
           id: './',
-          name: '到期管家',
-          short_name: '到期管家',
-          description: '证件、保单、账单和订阅的到期提醒。数据只留在这台设备上。',
+          name: '别忘了',
+          short_name: '别忘了',
+          description: '证件、还款和家里琐事的提醒。数据只留在这台设备上。',
           lang: 'zh-CN',
           dir: 'ltr',
           display: 'standalone',

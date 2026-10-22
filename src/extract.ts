@@ -218,11 +218,15 @@ function findAmounts(text: string): FoundAmount[] {
 
 function guessCategory(text: string): Category {
   const rules: { category: Category; pattern: RegExp; weight: number }[] = [
-    { category: 'insurance', pattern: /保险单|保险|保单|保费|被保险人|\binsurance\b|\bpolicy\b|\bpremium\b/i, weight: 2 },
-    { category: 'id', pattern: /护照|身份证|通行证|驾驶证|签证|\bpassport\b|\bid\s*card\b|\bvisa\b/i, weight: 2 },
-    { category: 'contract', pattern: /合同|协议|租赁|\bcontract\b|\bagreement\b|\blease\b/i, weight: 2 },
+    { category: 'insurance', pattern: /保险单|保险|保单|保费|被保险人|车险|\binsurance\b|\bpolicy\b|\bpremium\b/i, weight: 2 },
+    { category: 'document', pattern: /护照|身份证|通行证|驾驶证|驾照|签证|\bpassport\b|\bid\s*card\b|\bvisa\b/i, weight: 2 },
+    { category: 'car', pattern: /年检|保养|车辆|\binspection\b/i, weight: 2 },
+    { category: 'house', pattern: /合同|协议|租赁|房租|房贷|物业|\bcontract\b|\bagreement\b|\blease\b/i, weight: 2 },
+    { category: 'money', pattern: /账单|发票|还款|信用卡|电费|水费|燃气|话费|缴费|\binvoice\b|\bbill\b|amount\s+due|payment\s+due/i, weight: 2 },
+    { category: 'health', pattern: /体检|疫苗|洗牙|用药/i, weight: 2 },
+    { category: 'child', pattern: /入学|考试报名/i, weight: 2 },
     { category: 'subscription', pattern: /订阅|会员|连续包月|年费|月费|\bsubscription\b|\bmembership\b|\brenewal\b/i, weight: 2 },
-    { category: 'bill', pattern: /账单|发票|电费|水费|燃气|话费|缴费|\binvoice\b|\bbill\b|amount\s+due|payment\s+due/i, weight: 2 },
+    { category: 'household', pattern: /保修|滤芯|复诊|清洗/i, weight: 2 },
   ];
   const scores = new Map<Category, number>();
   for (const rule of rules) {
@@ -230,8 +234,8 @@ function guessCategory(text: string): Category {
     if (!hits?.length) continue;
     scores.set(rule.category, (scores.get(rule.category) ?? 0) + hits.length * rule.weight);
   }
-  const priority: Category[] = ['insurance', 'id', 'contract', 'subscription', 'bill'];
-  let best: Category = 'other';
+  const priority: Category[] = ['insurance', 'document', 'car', 'house', 'health', 'child', 'money', 'subscription', 'household'];
+  let best: Category = 'household';
   let bestScore = 0;
   for (const category of priority) {
     const score = scores.get(category) ?? 0;
@@ -265,7 +269,7 @@ function guessTitle(text: string): string {
 export function extractDocument(raw: string): Extraction {
   const text = normalizeText(raw);
   if (!text) {
-    return { title: '', category: 'other', amount: null, currency: null, validFrom: null, validUntil: null };
+    return { title: '', category: 'household', amount: null, currency: null, validFrom: null, validUntil: null };
   }
   const dates = findDates(text);
   const until = pickExpiry(dates);

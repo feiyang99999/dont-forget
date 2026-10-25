@@ -3,7 +3,7 @@ import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig(({ command }) => {
-  const base = process.env.BASE_PATH || (command === 'build' ? './' : '/');
+  const base = process.env.BASE_PATH || (command === 'build' ? '/dont-forget/' : '/');
   return {
     base,
     plugins: [

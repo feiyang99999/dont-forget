@@ -43,23 +43,23 @@ npm run build
 npm run preview
 ```
 
-默认 `base` 是相对路径 `./`，所以放在 `https://用户名.github.io/仓库名/` 下面也能找到脚本和图标。如果主机要求绝对前缀：
+生产构建的 `base` 是 `/dont-forget/`，对应项目站点 `https://feiyang99999.github.io/dont-forget/`。本地 `npm run dev` 仍用 `/`。换一个子路径时：
 
 ```bash
-BASE_PATH=/仓库名/ npm run build
+BASE_PATH=/别的仓库名/ npm run build
 ```
 
 `BASE_PATH` 要以 `/` 开头和结尾。
 
 ## 免费部署到 GitHub Pages
 
-1. 把这个项目推到一个 GitHub 仓库。
+仓库：<https://github.com/feiyang99999/dont-forget>
+
+1. 把 `main` 推到这个仓库。
 2. 打开仓库的 Settings → Pages。
 3. Build and deployment 里，Source 选 GitHub Actions。
 4. 推送到 `main` 后，`.github/workflows/pages.yml` 会跑测试、构建，并发布 `dist`。
-5. 等 Actions 变绿。页面地址一般是 `https://用户名.github.io/仓库名/`。
-
-仓库名就是子路径。不用改代码，相对路径已经按这个情况准备好了。
+5. 等 Actions 变绿。页面地址是 <https://feiyang99999.github.io/dont-forget/>。
 
 ## 在 iPhone 上安装
 

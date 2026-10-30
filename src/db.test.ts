@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { parseBackup, serializeBackup } from './backup.ts';
-import { clearAll, deleteDatabase, deleteItem, getMeta, loadAll, replaceAll, saveItem, setMeta } from './db.ts';
+import { keepThumbnail, parseBackup, serializeBackup } from './backup.ts';
+import { clearAll, deleteDatabase, deleteItem, getMeta, loadAll, mergeItems, replaceAll, saveItem, setMeta } from './db.ts';
 import type { Item, Person } from './types.ts';
 
 const people: Person[] = [
@@ -106,6 +106,51 @@ describe('IndexedDB and backup round-trip', () => {
   it('rejects a file that is not this app', () => {
     expect(() => parseBackup('{')).toThrow(/bad-backup/);
     expect(() => parseBackup('{"app":"other","version":1,"people":[],"items":[]}')).toThrow(/bad-backup/);
+  });
+
+  it('keeps a saved photo in the backup, and a bad photo cannot drop the record', async () => {
+    const jpeg = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=';
+    const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    const webp = 'data:image/webp;base64,UklGRg==';
+    const license = {
+      ...policy(),
+      id: 'license-1',
+      name: '驾驶证',
+      category: 'car' as const,
+      thumbnail: keepThumbnail(jpeg),
+    };
+    await saveItem(license);
+    await saveItem({ ...license, id: 'license-png', thumbnail: keepThumbnail(png) });
+    await saveItem({ ...license, id: 'license-webp', thumbnail: keepThumbnail(webp) });
+
+    const huge = `data:image/jpeg;base64,${'A'.repeat(400_001)}`;
+    const remote = 'https://example.com/license.jpg';
+    expect(keepThumbnail(huge)).toBeNull();
+    expect(keepThumbnail(remote)).toBeNull();
+    await saveItem({ ...license, id: 'license-huge', thumbnail: keepThumbnail(huge) });
+    await saveItem({ ...license, id: 'license-remote', thumbnail: keepThumbnail(remote) });
+
+    const stored = await loadAll();
+    const json = serializeBackup(stored.people, stored.items, new Date('2026-10-30T00:00:00Z'));
+    const file = JSON.parse(json) as { people: { id: string }[]; items: { id: string; name: string; thumbnail: string | null; category: string }[] };
+    expect(file.people.map((person) => person.id)).toEqual(expect.arrayContaining(['person-me', 'person-spouse', 'person-child', 'person-parents']));
+    expect(file.items.map((item) => item.id).sort()).toEqual(['license-1', 'license-huge', 'license-png', 'license-remote', 'license-webp']);
+    expect(file.items.find((item) => item.id === 'license-1')).toMatchObject({ name: '驾驶证', category: 'car', thumbnail: jpeg });
+    expect(file.items.find((item) => item.id === 'license-png')?.thumbnail).toBe(png);
+    expect(file.items.find((item) => item.id === 'license-webp')?.thumbnail).toBe(webp);
+    expect(file.items.find((item) => item.id === 'license-huge')?.thumbnail).toBeNull();
+    expect(file.items.find((item) => item.id === 'license-remote')?.thumbnail).toBeNull();
+    expect(parseBackup(json).items).toHaveLength(5);
+  });
+
+  it('keeps a record saved while the first IndexedDB read was still empty', () => {
+    const license = { ...policy(), id: 'license-1', name: '驾驶证', category: 'car' as const };
+    const merged = mergeItems([], [license]);
+    const json = serializeBackup(people, merged, new Date('2026-10-30T00:00:00Z'));
+    const file = JSON.parse(json) as { items: { name: string; thumbnail: string }[] };
+    expect(file.items).toHaveLength(1);
+    expect(file.items[0]?.name).toBe('驾驶证');
+    expect(file.items[0]?.thumbnail).toBe(license.thumbnail);
   });
 
   it('drops a thumbnail that would request another site', () => {

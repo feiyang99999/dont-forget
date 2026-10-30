@@ -90,6 +90,13 @@ function orderPeople(people: Person[], order: string): Person[] {
   });
 }
 
+/** Memory written during the opening read must win. That read can finish late and would otherwise wipe a record that was just saved. */
+export function mergeItems(persisted: Item[], memory: Item[]): Item[] {
+  const byId = new Map(persisted.map((item) => [item.id, item]));
+  for (const item of memory) byId.set(item.id, item);
+  return [...byId.values()];
+}
+
 export async function loadAll(): Promise<{ people: Person[]; items: Item[] }> {
   const db = await openDb();
   const tx = db.transaction(['people', 'items', 'meta'], 'readonly');

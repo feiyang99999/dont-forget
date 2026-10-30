@@ -25,5 +25,11 @@ export function canvasThumb(source: HTMLCanvasElement): string {
   context.fillStyle = '#ffffff';
   context.fillRect(0, 0, canvas.width, canvas.height);
   context.drawImage(source, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL('image/jpeg', 0.66);
+  let quality = 0.66;
+  let url = canvas.toDataURL('image/jpeg', quality);
+  while (url.length > 400_000 && quality > 0.35) {
+    quality = Math.round((quality - 0.12) * 100) / 100;
+    url = canvas.toDataURL('image/jpeg', quality);
+  }
+  return url.length > 400_000 ? '' : url;
 }

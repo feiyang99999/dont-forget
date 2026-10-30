@@ -1,7 +1,7 @@
 import { asset } from './assets.ts';
-import { parseBackup, serializeBackup } from './backup.ts';
+import { keepThumbnail, parseBackup, serializeBackup } from './backup.ts';
 import { advanceSeries, nextMonthly, nextOccurrence, nextYearly, normalizeReminders, parseAmount, todayIso } from './dates.ts';
-import { clearAll, deleteItem, getMeta, loadAll, replaceAll, saveItem, savePeople, setMeta } from './db.ts';
+import { clearAll, deleteItem, getMeta, loadAll, mergeItems, replaceAll, saveItem, savePeople, setMeta } from './db.ts';
 import { downloadText } from './download.ts';
 import { extractDocument } from './extract.ts';
 import { supersedeItem, type NextFields } from './history.ts';
@@ -200,8 +200,8 @@ async function runOcr(blob: Blob): Promise<void> {
   render();
   try {
     const canvas = await fileToCanvas(blob, 1600);
-    if (token !== ocrToken) return;
-    const thumb = canvasThumb(canvas);
+    if (token !== ocrToken || !state.draft) return;
+    state.draft.thumbnail = keepThumbnail(canvasThumb(canvas));
     const text = await recognize(canvas, (message) => {
       if (token !== ocrToken) return;
       state.ocr.status = message.status;
@@ -209,7 +209,6 @@ async function runOcr(blob: Blob): Promise<void> {
       updateOcrDom();
     });
     if (token !== ocrToken || !state.draft) return;
-    state.draft.thumbnail = thumb;
     state.draft.sourceText = text;
     if (state.draft.id && state.draft.mode === 'edit') state.draft.mode = 'renew';
     applyGuesses(state.draft);
@@ -218,7 +217,12 @@ async function runOcr(blob: Blob): Promise<void> {
     if (token !== ocrToken) return;
     const message = error instanceof Error ? error.message : String(error);
     state.ocr.error = /fetch|network|failed to load/i.test(message) ? message : message;
-    state.view = 'capture';
+    if (state.draft?.thumbnail) {
+      state.draft.error = t(state.lang, 'ocrFail');
+      state.view = 'edit';
+    } else {
+      state.view = 'capture';
+    }
   } finally {
     if (token === ocrToken) {
       state.ocr.running = false;
@@ -307,6 +311,7 @@ async function saveDraft(): Promise<void> {
     render();
     return;
   }
+  draft.thumbnail = keepThumbnail(draft.thumbnail);
   const now = Date.now();
   const next = fieldsFromDraft(draft);
   let item: Item;
@@ -326,9 +331,25 @@ async function saveDraft(): Promise<void> {
   try {
     await saveItem(item);
   } catch (error) {
-    draft.error = error instanceof Error ? error.message : t(state.lang, 'dbError');
-    render();
-    return;
+    const stripped = {
+      ...item,
+      thumbnail: null,
+      history: item.history.map((revision) => ({ ...revision, thumbnail: null })),
+    };
+    const photoBlocked = item.thumbnail != null || item.history.some((revision) => revision.thumbnail);
+    if (!photoBlocked) {
+      draft.error = error instanceof Error ? error.message : t(state.lang, 'dbError');
+      render();
+      return;
+    }
+    try {
+      await saveItem(stripped);
+      item = stripped;
+    } catch (again) {
+      draft.error = again instanceof Error ? again.message : t(state.lang, 'dbError');
+      render();
+      return;
+    }
   }
   const index = state.items.findIndex((entry) => entry.id === item.id);
   if (index >= 0) state.items[index] = item;
@@ -540,7 +561,12 @@ async function onClick(event: MouseEvent): Promise<void> {
   }
   if (action === 'manual') {
     const kind: ItemKind = target.dataset.kind === 'subscription' ? 'subscription' : 'expiry';
-    state.draft = blankDraft(kind);
+    if (state.view === 'capture' && state.draft) {
+      state.draft.kind = kind;
+      if (kind === 'subscription') state.draft.category = 'subscription';
+    } else {
+      state.draft = blankDraft(kind);
+    }
     state.view = 'edit';
     render();
     return;
@@ -745,7 +771,7 @@ async function boot(): Promise<void> {
   try {
     const loaded = await loadAll();
     state.people = loaded.people;
-    state.items = loaded.items;
+    state.items = mergeItems(loaded.items, state.items);
     const lang = await getMeta('lang');
     if (lang === 'zh' || lang === 'en') applyLang(lang);
     await rollRecurring();

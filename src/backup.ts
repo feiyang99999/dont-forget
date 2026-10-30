@@ -21,11 +21,12 @@ function asNullableString(value: unknown): string | null {
 }
 
 /** Only in-app JPEG/PNG/WebP data URLs. A remote thumbnail would phone home when drawn. */
-function asThumbnail(value: unknown): string | null {
+export function keepThumbnail(value: unknown): string | null {
   if (typeof value !== 'string') return null;
-  if (value.length > 400_000) return null;
-  if (!/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$/.test(value)) return null;
-  return value;
+  const compact = value.replace(/\s/g, '');
+  if (!compact || compact.length > 400_000) return null;
+  if (!/^data:image\/(?:jpeg|jpg|png|webp);base64,[A-Za-z0-9+/]+=*$/.test(compact)) return null;
+  return compact;
 }
 
 function asAmount(value: unknown): number | null {
@@ -66,7 +67,7 @@ function sanitizeRevision(raw: unknown): Revision {
     reminders: asReminders(row.reminders),
     notes: asString(row.notes),
     sourceText: asString(row.sourceText),
-    thumbnail: asThumbnail(row.thumbnail),
+    thumbnail: keepThumbnail(row.thumbnail),
     recordedAt: typeof row.recordedAt === 'number' ? row.recordedAt : 0,
     supersededAt: typeof row.supersededAt === 'number' ? row.supersededAt : 0,
   };
@@ -95,7 +96,7 @@ function sanitizeItem(raw: unknown): Item {
     reminders: asReminders(row.reminders),
     notes: asString(row.notes),
     sourceText: asString(row.sourceText),
-    thumbnail: asThumbnail(row.thumbnail),
+    thumbnail: keepThumbnail(row.thumbnail),
     createdAt: typeof row.createdAt === 'number' ? row.createdAt : 0,
     updatedAt: typeof row.updatedAt === 'number' ? row.updatedAt : 0,
     history: Array.isArray(row.history) ? row.history.map(sanitizeRevision) : [],

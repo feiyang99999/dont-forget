@@ -160,15 +160,15 @@ function reminderFields(draft: Draft, lang: ViewState['lang']): string {
   const extra = draft.reminders.filter((day) => !presets.includes(day));
   const boxes = [...presets, ...extra].map((day) => {
     const checked = draft.reminders.includes(day) ? ' checked' : '';
-    return `<label class="check"><input type="checkbox" name="reminder" value="${day}"${checked}> ${day}</label>`;
+    return `<label class="check"><input type="checkbox" name="reminder" value="${day}"${checked}><span>${day}</span></label>`;
   }).join('');
-  return `<fieldset><legend>${esc(t(lang, 'fieldReminders'))}</legend><div class="checks">${boxes}</div>
+  return `<fieldset><legend>${esc(t(lang, 'fieldReminders'))}</legend><div class="fieldset-body"><div class="checks">${boxes}</div>
     <div class="inline">
       <label class="sr" for="custom-days">${esc(t(lang, 'customDays'))}</label>
       <input id="custom-days" inputmode="numeric" placeholder="${esc(t(lang, 'customDays'))}">
       <button type="button" data-action="add-reminder">${esc(t(lang, 'addReminder'))}</button>
     </div>
-    <p class="hint">${esc(t(lang, 'reminderHint'))}</p></fieldset>`;
+    <p class="hint">${esc(t(lang, 'reminderHint'))}</p></div></fieldset>`;
 }
 
 function timeline(state: ViewState, item: Item): string {
@@ -195,17 +195,20 @@ function editView(state: ViewState): string {
   const people = options(state.people.map((person) => ({ value: person.id, label: person.name })), draft.personId);
   const categories = options(CATEGORIES.map((category) => ({ value: category, label: categoryLabel(state.lang, category) })), draft.category);
   const currencies = options(CURRENCIES.map((currency) => ({ value: currency, label: currency })), draft.currency);
+  const radio = (value: string, label: string, on: boolean) =>
+    `<label class="check"><input type="radio" name="cycle" value="${value}"${on ? ' checked' : ''}><span>${esc(label)}</span></label>`;
   const cycle = draft.kind === 'subscription'
-    ? `<fieldset><legend>${esc(t(state.lang, 'fieldCycle'))}</legend>
-        <label class="check"><input type="radio" name="cycle" value="monthly"${draft.cycle === 'monthly' ? ' checked' : ''}> ${esc(t(state.lang, 'monthly'))}</label>
-        <label class="check"><input type="radio" name="cycle" value="yearly"${draft.cycle === 'yearly' ? ' checked' : ''}> ${esc(t(state.lang, 'yearly'))}</label>
-      </fieldset>`
-    : `<fieldset><legend>${esc(t(state.lang, 'fieldCycle'))}</legend>
-        <label class="check"><input type="radio" name="cycle" value="once"${draft.cycle == null ? ' checked' : ''}> ${esc(t(state.lang, 'cycleOnce'))}</label>
-        <label class="check"><input type="radio" name="cycle" value="monthly"${draft.cycle === 'monthly' ? ' checked' : ''}> ${esc(t(state.lang, 'monthly'))}</label>
-        <label class="check"><input type="radio" name="cycle" value="yearly"${draft.cycle === 'yearly' ? ' checked' : ''}> ${esc(t(state.lang, 'yearly'))}</label>
+    ? `<fieldset><legend>${esc(t(state.lang, 'fieldCycle'))}</legend><div class="fieldset-body"><div class="choices">
+        ${radio('monthly', t(state.lang, 'monthly'), draft.cycle === 'monthly')}
+        ${radio('yearly', t(state.lang, 'yearly'), draft.cycle === 'yearly')}
+      </div></div></fieldset>`
+    : `<fieldset><legend>${esc(t(state.lang, 'fieldCycle'))}</legend><div class="fieldset-body"><div class="choices">
+        ${radio('once', t(state.lang, 'cycleOnce'), draft.cycle == null)}
+        ${radio('monthly', t(state.lang, 'monthly'), draft.cycle === 'monthly')}
+        ${radio('yearly', t(state.lang, 'yearly'), draft.cycle === 'yearly')}
+      </div>
         <p class="hint">${esc(t(state.lang, 'recurHint'))}</p>
-      </fieldset>`;
+      </div></fieldset>`;
   const months = options(Array.from({ length: 12 }, (_, index) => ({ value: String(index + 1), label: String(index + 1) })), draft.dueMonth);
   const recurFields = draft.kind === 'subscription' || draft.cycle == null
     ? ''
@@ -303,7 +306,7 @@ function settingsView(state: ViewState): string {
         <button type="button" data-action="pick-backup">${esc(t(state.lang, 'importJson'))}</button>
         <button type="button" data-action="export-all-ics">${esc(t(state.lang, 'exportAllIcs'))}</button>
       </div>
-      <label class="check"><input id="replace-backup" type="checkbox"> ${esc(t(state.lang, 'replaceBackup'))}</label>
+      <label class="check"><input id="replace-backup" type="checkbox"><span>${esc(t(state.lang, 'replaceBackup'))}</span></label>
       <input id="backup-file" type="file" accept="application/json,.json" hidden>
     </section>
     <section><h2>${esc(t(state.lang, 'installTitle'))}</h2>${paragraphs(t(state.lang, 'installBody'))}</section>

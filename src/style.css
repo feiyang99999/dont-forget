@@ -107,6 +107,19 @@ legend {
   align-items: stretch;
 }
 .split > * { min-width: 0; }
+/* iOS sizes the currency <select> from its native control, so min-height
+   alone leaves the amount input shorter. Grow only that input to the row
+   the select already sets; do not set a height on the select. */
+.split:has(input[name="amount"]) > label:has(input[name="amount"]) {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.split:has(input[name="amount"]) input[name="amount"] {
+  flex: 1 1 0;
+  height: auto;
+  min-height: 0;
+}
 .chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
 .chip { flex: 0 0 auto; border-radius: 999px; background: transparent; }
 .chip[aria-pressed="true"] { background: var(--pine); color: #f7f1e4; border-color: var(--pine); }
